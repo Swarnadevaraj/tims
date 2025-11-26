@@ -12,6 +12,7 @@ const UserProfile = () => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [imageTimestamp, setImageTimestamp] = useState(Date.now());
+  const [previewUrl, setPreviewUrl] = useState(null);
 
   const { data: profile, isLoading, refetch } = useQuery('profile', userService.getProfile, {
     initialData: user,
@@ -56,23 +57,42 @@ const UserProfile = () => {
       return;
     }
 
+    // Create preview URL immediately
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+
     try {
       setUploading(true);
-      console.log('Uploading file:', file.name);
+      console.log('Uploading file:', file.name, 'Size:', file.size, 'bytes');
       
       const result = await uploadProfilePicture(file);
       console.log('Upload result:', result);
       
       // Refresh user data from server
-      await refreshUser();
+      const updatedUser = await refreshUser();
+      console.log('User data after refresh:', updatedUser);
+      
       await refetch();
       
       // Force image reload with new timestamp
       setImageTimestamp(Date.now());
       
+      // Clear preview URL
+      URL.revokeObjectURL(objectUrl);
+      setPreviewUrl(null);
+      
+      // Update local state to force re-render
+      updateUser(updatedUser);
+      
       toast.success('Profile picture updated successfully!');
     } catch (error) {
       console.error('Upload failed:', error);
+      console.error('Error details:', error.response?.data);
+      
+      // Clear preview on error
+      URL.revokeObjectURL(objectUrl);
+      setPreviewUrl(null);
+      
       toast.error(error.response?.data?.message || 'Failed to upload profile picture');
     } finally {
       setUploading(false);
@@ -109,9 +129,9 @@ const UserProfile = () => {
     return <LoadingSpinner />;
   }
 
-  const profilePicUrl = profile?.profilePicture 
+  const profilePicUrl = previewUrl || (profile?.profilePicture 
     ? `http://localhost:5001${profile.profilePicture}?t=${imageTimestamp}` 
-    : null;
+    : null);
 
   return (
     <div className="fade-in max-w-4xl mx-auto">
@@ -129,7 +149,7 @@ const UserProfile = () => {
             <div className="mb-4 relative">
               {profilePicUrl ? (
                 <img
-                  key={profile?.profilePicture || 'default'}
+                  key={`${profile?.profilePicture}-${imageTimestamp}`}
                   src={profilePicUrl}
                   alt="Profile"
                   className="mx-auto h-32 w-32 rounded-full object-cover border-4 border-primary-500 bg-gray-200"
